@@ -58,6 +58,7 @@ class InvertedResidual(nn.Module):
 
         hidden_dim = round(inp * expand_ratio)
         self.identity = stride == 1 and inp == oup
+        self.expand_ratio = expand_ratio
 
         if expand_ratio == 1:
             self.conv = nn.Sequential(
@@ -84,11 +85,20 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(oup),
             )
 
+        self.add = torch.nn.quantized.FloatFunctional()
+
     def forward(self, x):
         if self.identity:
-            return x + self.conv(x)
+            return self.add.add(x, self.conv(x))
         else:
             return self.conv(x)
+
+    def fuse_model(self):
+        torch.quantization.fuse_modules(self.conv, ['0', '1'], inplace=True)
+        torch.quantization.fuse_modules(self.conv, ['3', '4'], inplace=True)
+
+        if self.expand_ratio != 1:
+            torch.quantization.fuse_modules(self.conv, ['6', '7'], inplace=True)
 
 
 class MobileNetV2(nn.Module):
@@ -156,6 +166,11 @@ class MobileNetV2(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
+
+    def fuse_model(self):
+        torch.quantization.fuse_modules(self.features[0], ['0', '1'], inplace=True)
+        torch.quantization.fuse_modules(self.conv, ['0', '1'], inplace=True)
+
 
 def mobilenetv2(pretrained, **kwargs):
     model = MobileNetV2()
