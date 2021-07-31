@@ -54,18 +54,24 @@ class Upsample(nn.Module):
     def forward(self, x,):
         x = self.upsample(x)
         return x
-def PartAdd(x,y):
-    if x.size(1) == y.size(1):
-        return x+y
-    len = min(x.size(1),y.size(1))
-    new_1 = x[:,:len,...] + y[:,:len,...]
-    if y.size(1) > x.size(1):
-        new_2 = y[:,len:,...]
-    else:
-        new_2 = x[:,len:,...]
-    new = torch.cat((new_1,new_2),1)
-
-    return new
+class PartAdd(nn.Module):
+    def __init__(self):
+        super(PartAdd, self).__init__()
+        self.ff = nn.quantized.FloatFunctional()
+    
+    def forward(self, x, y):
+        if x.size(1) == y.size(1):
+            return self.ff(x,y)
+        len = min(x.size(1),y.size(1))
+#        new_1 = x[:,:len,...] + y[:,:len,...]
+        new_1 = self.ff.add(x[:,:len,...], y[:,:len,...])
+        if y.size(1) > x.size(1):
+            new_2 = y[:,len:,...]
+        else:
+            new_2 = x[:,len:,...]
+        new = torch.cat((new_1,new_2),1)
+    
+        return new
 def DepthwiseConvolution(in_filters,out_filters):
     m = nn.Sequential(
         BasicConv(in_filters, in_filters, 3,depthwise=True),
@@ -89,9 +95,11 @@ class Connect(nn.Module):
             BasicConv(channels, channels, 3,depthwise=True),
             BasicConv(channels, channels, 1 ),
         )
+        self.ff = nn.quantized.FloatFunctional()
     def forward(self, x,):        
         x2 = self.conv(x)
-        x = torch.add(x,x2)
+#        x = torch.add(x,x2)
+        self.ff.add(x,x2)
         return x
 class yolo(nn.Module):
     def __init__(self,config):
@@ -116,6 +124,9 @@ class yolo(nn.Module):
         for i in range(2):
             self.yolo_losses.append(YOLOLoss(config["yolo"]["anchors"],config["yolo"]["mask"][i] \
                 ,self.num_classes,[config["img_w"],config["img_h"]],config["yolo"]["ignore_thresh"][i],config["yolo"]["iou_thresh"],iou_weighting=config["iou_weighting"]))
+        self.part_add = PartAdd()
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
        
     def forward(self, x, targets=None):
 
@@ -129,17 +140,21 @@ class yolo(nn.Module):
         S16 = self.conv_for_S16(feature1)
         S16 = self.connect_for_S16(S16)
         #S16 = self.blending(S16,S32_Upsample)
-        S16 = PartAdd(S16,S32_Upsample)
+        #S16 = PartAdd(S16,S32_Upsample)
+        S16 = self.part_add(S16,S32_Upsample)
         #print(S16.shape)
         #S16 = torch.add(S16,S32_Upsample)
        
         out1 = self.yolo_headS16(S16)
-        
+        out0 = self.dequant(out0)
+        out1 = self.dequant(out1)
+
         output = self.yolo_losses[0](out0,targets),self.yolo_losses[1](out1,targets)
         if targets == None :
             output = nms(output,self.num_classes)
 
-        
+        output = [self.quant(out) for out in output]
+
         return output
     
 #def test():
