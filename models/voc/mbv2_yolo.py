@@ -61,7 +61,7 @@ class PartAdd(nn.Module):
     
     def forward(self, x, y):
         if x.size(1) == y.size(1):
-            return self.ff(x,y)
+            return self.ff.add(x,y)
         len = min(x.size(1),y.size(1))
 #        new_1 = x[:,:len,...] + y[:,:len,...]
         new_1 = self.ff.add(x[:,:len,...], y[:,:len,...])
@@ -99,7 +99,7 @@ class Connect(nn.Module):
     def forward(self, x,):        
         x2 = self.conv(x)
 #        x = torch.add(x,x2)
-        self.ff.add(x,x2)
+        x = self.ff.add(x,x2)
         return x
 class yolo(nn.Module):
     def __init__(self,config):
