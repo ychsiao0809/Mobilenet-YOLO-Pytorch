@@ -156,6 +156,67 @@ class yolo(nn.Module):
         output = [self.quant(out) for out in output]
 
         return output
+
+class YoloWithoutLoss(nn.Module):
+    def __init__(self,config):
+        super(YoloWithoutLoss, self).__init__()
+        self.num_classes = config["yolo"]["num_classes"]
+        self.num_anchors = config["yolo"]["num_anchors"]
+        #  backbone
+        model_url = 'https://raw.githubusercontent.com/d-li14/mobilenetv2.pytorch/master/pretrained/mobilenetv2-c5e733a8.pth'
+        self.backbone = mobilenetv2(model_url)
+
+        self.conv_for_S32 = BasicConv(1280,512,1)
+        #print(num_anchors * (5 + num_classes))
+        self.connect_for_S32 = Connect(512)
+        self.yolo_headS32 = yolo_head([1024, self.num_anchors * (5 + self.num_classes)],512)
+
+
+        self.upsample = Upsample()
+        self.conv_for_S16 = DepthwiseConvolution(96,256)
+        self.connect_for_S16 = Connect(256)
+        self.yolo_headS16 = yolo_head([512, self.num_anchors * (5 + self.num_classes)],512)
+        self.part_add = PartAdd()
+
+    def forward(self, x):
+
+#        for i in range(2):
+#            self.yolo_losses[i].img_size = [x.size(2),x.size(3)]
+        feature1, feature2 = self.backbone(x)
+        S32 = self.conv_for_S32(feature2)
+        S32 = self.connect_for_S32(S32)
+        out0 = self.yolo_headS32(S32)
+        S32_Upsample = self.upsample(S32)
+        S16 = self.conv_for_S16(feature1)
+        S16 = self.connect_for_S16(S16)
+        #S16 = self.blending(S16,S32_Upsample)
+        #S16 = PartAdd(S16,S32_Upsample)
+        S16 = self.part_add(S16,S32_Upsample)
+        #print(S16.shape)
+        #S16 = torch.add(S16,S32_Upsample)
+
+        out1 = self.yolo_headS16(S16)
+
+        return (out0, out1)
+
+class YoloLoss(nn.Module):
+    def __init__(self, config):
+        super(YoloLoss, self).__init__()
+        self.num_classes = config["yolo"]["num_classes"]
+        self.yolo_losses = []
+        for i in range(2):
+            self.yolo_losses.append(YOLOLoss(config["yolo"]["anchors"],config["yolo"]["mask"][i] \
+                ,self.num_classes,[config["img_w"],config["img_h"]],config["yolo"]["ignore_thresh"][i],config["yolo"]["iou_thresh"],iou_weighting=config["iou_weighting"]))
+
+    def forward(self, out0, out1, targets, h, w):
+        for i in range(2):
+            self.yolo_losses[i].img_size = [h,w]
+
+        output = self.yolo_losses[0](out0,targets),self.yolo_losses[1](out1,targets)
+        if targets == None :
+            output = nms(output,self.num_classes)
+
+        return output
     
 #def test():
 #    net = yolo(3,20)
