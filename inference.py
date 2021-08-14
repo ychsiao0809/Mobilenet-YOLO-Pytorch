@@ -108,8 +108,8 @@ def inference_image(model, original_image,device):
     detections = model(image.unsqueeze(0))  # (N, num_defaultBoxes, 4), (N, num_defaultBoxes, n_classes)
 
     return detections
-def load_model(model, path_trained_weight):
-    checkpoint_backbone = torch.load(path_trained_weight)
+def load_model(model, path_trained_weight, map_location=None):
+    checkpoint_backbone = torch.load(path_trained_weight, map_location)
     
     pretrained_dict = checkpoint_backbone.state_dict()
 
