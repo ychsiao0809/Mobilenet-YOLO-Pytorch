@@ -68,8 +68,8 @@ class YOLOLoss(nn.Module):
         anchor_h = FloatTensor(this_anchors).index_select(1, LongTensor([1]))
         anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(bs,self.num_mask,in_h,in_w,1).to(device)   
         anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(bs,self.num_mask,in_h,in_w,1).to(device)        
-        grid_x = torch.linspace(0, in_w-1, in_w).repeat(in_w, 1).repeat(bs * self.num_mask, 1, 1).view(bs,self.num_mask,in_h,in_w,1).type(FloatTensor)
-        grid_y = torch.linspace(0, in_h-1, in_h).repeat(in_h, 1).t().repeat(bs * self.num_mask, 1, 1).view(bs,self.num_mask,in_h,in_w,1).type(FloatTensor)
+        grid_x = torch.linspace(0, in_w-1, in_w).repeat(in_h, 1).repeat(bs * self.num_mask, 1, 1).view(bs,self.num_mask,in_h,in_w,1).type(FloatTensor)
+        grid_y = torch.linspace(0, in_h-1, in_h).repeat(in_w, 1).t().repeat(bs * self.num_mask, 1, 1).view(bs,self.num_mask,in_h,in_w,1).type(FloatTensor)
         grid_xy = torch.cat((grid_x,grid_y),4)
         anchor_wh = torch.cat((anchor_w,anchor_h),4)
         return grid_xy,anchor_wh
